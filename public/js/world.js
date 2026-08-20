@@ -564,7 +564,9 @@ export function setSwingProgress(t) {
     ? Math.pow(t / DOWN, 0.6)
     : 1 - Math.pow((t - DOWN) / (1 - DOWN), 1.4);
 
-  g.rotation.z = base.rot.z - p * 3.3;      // 오른쪽 위 → 왼쪽 아래로 쓸어내림
+  // 위로 치켜든 상태에서 머리 위를 지나 왼쪽 아래로 내려친다.
+  // (+ 방향이 화면상 반시계 = 위쪽을 거쳐 좌하로 가는 자연스러운 내려치기)
+  g.rotation.z = base.rot.z + p * 3.3;
   g.rotation.x = base.rot.x + p * 0.55;     // 살짝 앞으로 눕히며
   g.position.x = base.pos.x - p * 0.55;     // 손도 왼쪽으로
   g.position.y = base.pos.y - p * 0.30;     // 아래로
@@ -765,7 +767,9 @@ export function updateRemotes() {
     av.position.z += (pos.z - av.position.z) * 0.25;
     // 점프/넉백 높이도 따라간다 (10Hz 스냅샷이라 보간)
     av.position.y += ((pos.y || 0) - av.position.y) * 0.3;
-    let d = pos.ry - av.rotation.y;
+    // 아바타는 얼굴이 로컬 +z 를 향하도록 만들었지만
+    // 플레이어의 yaw=0 은 -z 를 보는 방향이므로 π 를 더해 맞춘다.
+    let d = (pos.ry + Math.PI) - av.rotation.y;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
     av.rotation.y += d * 0.25;
