@@ -749,6 +749,45 @@ function makeAvatar(name, color) {
   return g;
 }
 
+/* ──────────────── 다른 사람의 휘두르기 ──────────────── */
+const SWING_MS = 260;
+const swingAt = new Map();          // playerId → 시작 시각
+
+/** 서버가 알려준 휘두르기를 해당 아바타에 재생 */
+export function remoteSwing(playerId) {
+  swingAt.set(playerId, performance.now());
+}
+
+/** 아바타가 든 빗자루에 스윙 자세를 적용 (1인칭과 같은 곡선) */
+function applyRemoteSwing(av, id) {
+  const m = av.userData.handMesh;
+  const base = av.userData.handBase;
+  if (!m || !base) return;
+
+  const started = swingAt.get(id);
+  const t = started === undefined ? 1.1 : (performance.now() - started) / SWING_MS;
+  if (t >= 1) {
+    if (av.userData.swinging) {                 // 원위치로 한 번만 되돌린다
+      m.position.copy(base.pos);
+      m.rotation.copy(base.rot);
+      av.userData.swinging = false;
+    }
+    return;
+  }
+  av.userData.swinging = true;
+
+  const DOWN = 0.35;
+  const p = t < DOWN
+    ? Math.pow(t / DOWN, 0.6)
+    : 1 - Math.pow((t - DOWN) / (1 - DOWN), 1.4);
+
+  m.rotation.z = base.rot.z + p * 3.3;          // 머리 위를 지나 좌하로
+  m.rotation.x = base.rot.x - p * 0.5;          // 앞으로 내리꽂듯
+  m.position.x = base.pos.x - p * 0.5;
+  m.position.y = base.pos.y - p * 0.35;
+  m.position.z = base.pos.z + p * 0.25;         // 아바타 기준 앞쪽
+}
+
 export function updateRemotes() {
   const seen = new Set();
   const players = (S.state && S.state.players) || [];
@@ -791,11 +830,20 @@ export function updateRemotes() {
         }
         av.add(m);
         av.userData.handMesh = m;
+        av.userData.handBase = { pos: m.position.clone(), rot: m.rotation.clone() };
+        av.userData.swinging = false;
       }
     }
   }
+  // 휘두르기 모션 반영
+  for (const [id, av] of dynamic.remotes) applyRemoteSwing(av, id);
+
   for (const [id, av] of dynamic.remotes) {
-    if (!seen.has(id)) { scene.remove(av); dynamic.remotes.delete(id); }
+    if (!seen.has(id)) {
+      scene.remove(av);
+      dynamic.remotes.delete(id);
+      swingAt.delete(id);
+    }
   }
 }
 

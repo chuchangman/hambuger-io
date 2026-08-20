@@ -312,6 +312,8 @@ class Room {
     if (!p || !pos) return;
     p.pos = {
       x: Math.max(-20, Math.min(20, Number(pos.x) || 0)),
+      // y = 점프/넉백 높이. 이게 있어야 남이 뛰는 게 보인다.
+      y: Math.max(0, Math.min(6, Number(pos.y) || 0)),
       z: Math.max(-20, Math.min(20, Number(pos.z) || 0)),
       ry: Number(pos.ry) || 0
     };

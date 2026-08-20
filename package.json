@@ -10,7 +10,8 @@
     "test": "node test/smoke.js",
     "check:llm": "node scripts/check-llm.js",
     "share": "node scripts/share.js",
-    "test:broom": "node test/broom.js"
+    "test:broom": "node test/broom.js",
+    "test:visibility": "node test/visibility.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

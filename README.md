@@ -292,13 +292,15 @@ public/js/
   ui.js      HUD · 위치 표시 · 대화/주문패드 오버레이 · 대기실 · 결과
 test/
   smoke.js   3인 플레이 전체 흐름 자동 검증 (`npm test`)
-  broom.js   빗자루 난투 검증 (`npm run test:broom`)
+  broom.js      빗자루 난투 검증 (`npm run test:broom`)
+  visibility.js 다른 유저의 점프·휘두르기 전파 검증 (`npm run test:visibility`)
 ```
 
 Gemini는 SDK 없이 REST(`generativelanguage.googleapis.com`)를 Node 내장 `fetch`로 호출합니다.
 의존성은 `express` · `socket.io` · `three` · `dotenv` 넷뿐입니다.
 
-다른 플레이어는 3D 안에서 **아바타로 보이며**, 손에 든 재료까지 실시간으로 보입니다.
+다른 플레이어는 3D 안에서 **아바타로 보입니다.** 손에 든 재료, 점프, 빗자루 휘두르는 동작까지
+실시간으로 전달되므로 누가 뭘 하는지 보고 협동(또는 훼방)할 수 있습니다.
 
 ### 자동 검증
 

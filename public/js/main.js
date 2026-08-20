@@ -1,7 +1,7 @@
 /* 엔트리 — 네트워크 · 월드 · 플레이어 · UI 를 연결하고 루프를 돈다 */
 import { connect, on, S } from './net.js';
 import {
-  initWorld, render, syncFromKitchen, updateCustomer, setSwingProgress,
+  initWorld, render, syncFromKitchen, updateCustomer, setSwingProgress, remoteSwing,
   scene, camera, interactables
 } from './world.js';
 import {
@@ -44,6 +44,11 @@ async function boot() {
   on('kitchen', syncFromKitchen);
   on('state', updateCustomer);
 
+  // 누가 빗자루를 휘둘렀다 — 그 사람 아바타에 모션 재생 (헛스윙도 보인다)
+  on('swing', (d) => {
+    if (d.by !== S.meId) remoteSwing(d.by);
+  });
+
   // 빗자루에 맞았다 — 넉백만 적용하고 별도 알림은 띄우지 않는다
   on('hit', (d) => {
     if (d.target === S.meId) applyKnockback(d.dirX, d.dirZ, d.power);
@@ -61,7 +66,8 @@ async function boot() {
 
   // 디버깅/자동 검증용 훅 (프레임을 수동으로 한 번 돌린다)
   window.HB = {
-    S, scene, camera, interactables, player: P, setLook, applyKnockback, setSwingProgress,
+    S, scene, camera, interactables, player: P, setLook,
+    applyKnockback, setSwingProgress, remoteSwing,
     step(dt) { updatePlayer(dt || 0.016); renderHUD(); render(); }
   };
 
