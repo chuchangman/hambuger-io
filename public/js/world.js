@@ -533,9 +533,10 @@ function updateHand() {
   if (!mine) return;
   const g = makeItemMesh(mine);
   if (mine.type === 'broom') {
-    // 무기처럼 어깨에 걸쳐 든다
-    g.position.set(0.5, -0.5, -0.85);
-    g.rotation.set(-0.35, 0.2, -0.55);
+    // 자루를 잡고 솔이 위로 오게 — 오른쪽 위로 치켜든 자세
+    // (메시는 솔이 -y 쪽에 있으므로 z 를 π 근처로 돌려 뒤집는다)
+    g.position.set(0.52, -0.34, -0.85);
+    g.rotation.set(-0.12, 0.18, Math.PI - 0.5);
     g.scale.setScalar(0.85);
   } else {
     g.position.set(0.42, -0.32, -0.78);
@@ -557,12 +558,17 @@ export function setSwingProgress(t) {
     g.rotation.copy(base.rot);
     return;
   }
-  // 위로 들었다가 아래로 후려친다
-  const arc = Math.sin(t * Math.PI);
-  g.rotation.x = base.rot.x - arc * 2.0;
-  g.rotation.z = base.rot.z + arc * 0.8;
-  g.position.z = base.pos.z - arc * 0.35;
-  g.position.y = base.pos.y + arc * 0.25;
+  // 우상 → 좌하 대각선 내려치기. 내려칠 때 빠르고 복귀는 느리게.
+  const DOWN = 0.35;
+  const p = t < DOWN
+    ? Math.pow(t / DOWN, 0.6)
+    : 1 - Math.pow((t - DOWN) / (1 - DOWN), 1.4);
+
+  g.rotation.z = base.rot.z - p * 3.3;      // 오른쪽 위 → 왼쪽 아래로 쓸어내림
+  g.rotation.x = base.rot.x + p * 0.55;     // 살짝 앞으로 눕히며
+  g.position.x = base.pos.x - p * 0.55;     // 손도 왼쪽으로
+  g.position.y = base.pos.y - p * 0.30;     // 아래로
+  g.position.z = base.pos.z - p * 0.22;     // 앞으로 뻗음
 }
 
 /* ──────────────── 조리 상태 갱신 ──────────────── */
@@ -771,7 +777,14 @@ export function updateRemotes() {
       if (av.userData.handMesh) { av.remove(av.userData.handMesh); av.userData.handMesh = null; }
       if (h && h.holding) {
         const m = makeItemMesh(h.holding);
-        m.position.set(0, 0.95, 0.45);
+        if (h.holding.type === 'broom') {
+          // 남이 든 것도 솔이 위로 (메시 기준 솔은 -y 쪽)
+          m.position.set(0.3, 1.05, 0.28);
+          m.rotation.set(0, 0, Math.PI - 0.45);
+          m.scale.setScalar(0.9);
+        } else {
+          m.position.set(0, 0.95, 0.45);
+        }
         av.add(m);
         av.userData.handMesh = m;
       }

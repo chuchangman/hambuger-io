@@ -1,7 +1,7 @@
 /* 엔트리 — 네트워크 · 월드 · 플레이어 · UI 를 연결하고 루프를 돈다 */
 import { connect, on, S } from './net.js';
 import {
-  initWorld, render, syncFromKitchen, updateCustomer,
+  initWorld, render, syncFromKitchen, updateCustomer, setSwingProgress,
   scene, camera, interactables
 } from './world.js';
 import {
@@ -61,7 +61,7 @@ async function boot() {
 
   // 디버깅/자동 검증용 훅 (프레임을 수동으로 한 번 돌린다)
   window.HB = {
-    S, scene, camera, interactables, player: P, setLook, applyKnockback,
+    S, scene, camera, interactables, player: P, setLook, applyKnockback, setSwingProgress,
     step(dt) { updatePlayer(dt || 0.016); renderHUD(); render(); }
   };
 
