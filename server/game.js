@@ -288,7 +288,7 @@ class Room {
       color: PLAYER_COLORS[n % PLAYER_COLORS.length],
       holding: null,
       lastSwing: 0,
-      pos: { x: -1.6 + (n % 4) * 1.1, z: 6.5 + Math.floor(n / 4) * 1.1, ry: 0 }
+      pos: { x: -1.6 + (n % 4) * 1.1, y: 0, z: 6.5 + Math.floor(n / 4) * 1.1, ry: 0 }
     };
     this.players.set(socketId, p);
     if (!this.hostId) this.hostId = socketId;
@@ -681,7 +681,7 @@ class Room {
   posSnapshot() {
     const out = [];
     for (const p of this.players.values()) {
-      out.push({ id: p.id, x: p.pos.x, z: p.pos.z, ry: p.pos.ry, holding: p.holding ? p.holding.type : null });
+      out.push({ id: p.id, x: p.pos.x, y: p.pos.y || 0, z: p.pos.z, ry: p.pos.ry, holding: p.holding ? p.holding.type : null });
     }
     return out;
   }

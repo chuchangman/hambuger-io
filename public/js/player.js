@@ -28,6 +28,17 @@ export const state = {
 
 const AMOUNTS = ['little', 'normal', 'much'];
 
+/* ──────────────── 점프 / 공중 물리 ──────────────── */
+const GRAVITY = -24;              // 중력 (m/s²)
+const JUMP_V = 6.4;               // 점프 초기 속도 → 최고점 약 0.85m, 체공 0.53초
+const HIT_LAUNCH = 5.2;           // 빗자루에 맞았을 때 뜨는 높이
+const AIR_CONTROL = 2.4;          // 공중에서 방향을 얼마나 바꿀 수 있는가 (작을수록 관성 유지)
+
+let height = 0;                   // 지면 위 높이
+let velY = 0;                     // 수직 속도
+let airborne = false;
+const moveVel = { x: 0, z: 0 };   // 이동 속도 (공중에서는 이륙 순간 값을 이어간다)
+
 /* ──────────────── 빗자루 난투 ──────────────── */
 const knock = { x: 0, z: 0 };     // 넉백 속도
 let shakeUntil = 0;               // 화면 흔들림 종료 시각
@@ -39,12 +50,18 @@ function shakeOffset() {
   return Math.sin(left * 0.09) * 0.04 * (left / 320);
 }
 
-/** 서버가 알려준 방향으로 밀려난다 */
+/** 서버가 알려준 방향으로 밀려난다 — 위로 뜨면서 포물선을 그린다 */
 export function applyKnockback(dirX, dirZ, power) {
   knock.x = dirX * power;
   knock.z = dirZ * power;
+  velY = HIT_LAUNCH;
+  height = Math.max(height, 0.01);
+  airborne = true;
   shakeUntil = performance.now() + 320;
 }
+
+export const isAirborne = () => airborne;
+export const getHeight = () => height;
 
 export const isSwinging = () => performance.now() < swingUntil;
 
@@ -324,36 +341,64 @@ export function updatePlayer(dt) {
   }
 
   const len = Math.hypot(mx, mz);
-  const pos = { x: camera.position.x, z: camera.position.z };
 
+  // 입력 → 월드 기준 희망 속도 (yaw: 전방 = (-sin,-cos), 우측 = (cos,-sin))
+  const speed = (keys.ShiftLeft || keys.ShiftRight) ? RUN : SPEED;
+  let wx = 0, wz = 0;
   if (len > 0) {
     mx /= len; mz /= len;
-    const sp = (keys.ShiftLeft || keys.ShiftRight ? RUN : SPEED) * dt;
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
-    // yaw 기준: 전방 = (-sin, -cos), 우측 = (cos, -sin). mz=-1 이 전진.
-    pos.x += (mx * cos + mz * sin) * sp;
-    pos.z += (mz * cos - mx * sin) * sp;
-    bob += dt * (keys.ShiftLeft ? 14 : 9);
-  } else {
-    bob += dt * 2;
+    wx = (mx * cos + mz * sin) * speed;
+    wz = (mz * cos - mx * sin) * speed;
   }
 
-  // 빗자루에 맞아 밀려나는 중
-  if (knock.x || knock.z) {
-    pos.x += knock.x * dt;
-    pos.z += knock.z * dt;
-    const decay = Math.exp(-6.5 * dt);          // 0.15초쯤이면 거의 멈춘다
+  // 점프 (땅에 있을 때만)
+  if (canMove && keys.Space && !airborne) {
+    velY = JUMP_V;
+    airborne = true;
+  }
+
+  if (airborne) {
+    // 공중에서는 이륙 순간의 속도를 이어가고 방향만 살짝 틀 수 있다 → 포물선
+    const k = Math.min(1, AIR_CONTROL * dt);
+    moveVel.x += (wx - moveVel.x) * k;
+    moveVel.z += (wz - moveVel.z) * k;
+  } else {
+    moveVel.x = wx;
+    moveVel.z = wz;
+  }
+
+  // 중력 적분
+  velY += GRAVITY * dt;
+  height += velY * dt;
+  if (height <= 0) {
+    height = 0;
+    velY = 0;
+    airborne = false;
+  } else {
+    airborne = true;
+  }
+
+  // 넉백은 착지 후에만 마찰로 줄어든다 (공중에서는 궤적을 유지)
+  if (!airborne && (knock.x || knock.z)) {
+    const decay = Math.exp(-7 * dt);
     knock.x *= decay;
     knock.z *= decay;
     if (Math.hypot(knock.x, knock.z) < 0.05) { knock.x = 0; knock.z = 0; }
   }
+
+  const pos = { x: camera.position.x, z: camera.position.z };
+  pos.x += (moveVel.x + knock.x) * dt;
+  pos.z += (moveVel.z + knock.z) * dt;
 
   collidePlayers(pos);
   collide(pos);
   camera.position.x = pos.x;
   camera.position.z = pos.z;
 
-  camera.position.y = EYE + Math.sin(bob) * (len > 0 ? 0.035 : 0.008) + shakeOffset();
+  bob += dt * (airborne ? 0 : (len > 0 ? (keys.ShiftLeft ? 14 : 9) : 2));
+  const bobY = airborne ? 0 : Math.sin(bob) * (len > 0 ? 0.035 : 0.008);
+  camera.position.y = EYE + height + bobY + shakeOffset();
   camera.rotation.order = 'YXZ';
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
@@ -373,7 +418,7 @@ export function updatePlayer(dt) {
   const t = performance.now();
   if (t - lastSent > 100) {
     lastSent = t;
-    emit('player:move', { x: camera.position.x, z: camera.position.z, ry: yaw });
+    emit('player:move', { x: camera.position.x, z: camera.position.z, y: height, ry: yaw });
   }
 }
 
@@ -389,4 +434,7 @@ export function resetPose() {
   // 가운데 아일랜드(z -1.4~3.8) 남쪽 통로에서 시작해 카운터(-z)를 바라본다
   camera.position.set(-2 + Math.random() * 4, EYE, 6.5);
   yaw = 0; pitch = 0;
+  height = 0; velY = 0; airborne = false;
+  moveVel.x = 0; moveVel.z = 0;
+  knock.x = 0; knock.z = 0;
 }

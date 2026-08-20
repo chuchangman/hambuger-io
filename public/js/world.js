@@ -783,6 +783,8 @@ export function updateRemotes() {
     }
     av.position.x += (pos.x - av.position.x) * 0.25;
     av.position.z += (pos.z - av.position.z) * 0.25;
+    // 점프/넉백 높이도 따라간다 (10Hz 스냅샷이라 보간)
+    av.position.y += ((pos.y || 0) - av.position.y) * 0.3;
     let d = pos.ry - av.rotation.y;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
