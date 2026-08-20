@@ -16,7 +16,9 @@ const INGREDIENTS = {
   tomato:     { name: '토마토',  emoji: '🍅', kind: 'chop' },
   onion:      { name: '양파',    emoji: '🧅', kind: 'chop' },
   pickle:     { name: '피클',    emoji: '🥒', kind: 'chop' },
-  sauce:      { name: '소스',    emoji: '🥫', kind: 'sauce' }
+  sauce:      { name: '소스',    emoji: '🥫', kind: 'sauce' },
+  /* 재료가 아니라 도구. 들면 재료를 못 들고, 대신 동료를 후려칠 수 있다. */
+  broom:      { name: '빗자루',  emoji: '🧹', kind: 'tool' }
 };
 
 const VEGGIES = ['lettuce', 'tomato', 'onion', 'pickle'];

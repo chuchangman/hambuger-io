@@ -1,6 +1,6 @@
 /* 1인칭 컨트롤러 — WASD 이동, 마우스 시점, 충돌, 조준 상호작용 */
 import * as THREE from '/vendor/three.module.js';
-import { camera, interactables, solids } from './world.js';
+import { camera, interactables, solids, setSwingProgress } from './world.js';
 import { S, act, emit, myHolding, now } from './net.js';
 
 const keys = Object.create(null);
@@ -27,6 +27,58 @@ export const state = {
 };
 
 const AMOUNTS = ['little', 'normal', 'much'];
+
+/* ──────────────── 빗자루 난투 ──────────────── */
+const knock = { x: 0, z: 0 };     // 넉백 속도
+let shakeUntil = 0;               // 화면 흔들림 종료 시각
+let swingUntil = 0;               // 휘두르는 모션 종료 시각
+
+function shakeOffset() {
+  const left = shakeUntil - performance.now();
+  if (left <= 0) return 0;
+  return Math.sin(left * 0.09) * 0.04 * (left / 320);
+}
+
+/** 서버가 알려준 방향으로 밀려난다 */
+export function applyKnockback(dirX, dirZ, power) {
+  knock.x = dirX * power;
+  knock.z = dirZ * power;
+  shakeUntil = performance.now() + 320;
+}
+
+export const isSwinging = () => performance.now() < swingUntil;
+
+/** 조준 방향 앞쪽에서 가장 가까운 플레이어를 찾는다 */
+function pickTarget() {
+  const range = (S.cfg.combat && S.cfg.combat.range) || 2.6;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);   // 전방 벡터
+  let best = null, bestD = Infinity;
+  for (const o of S.positions) {
+    if (o.id === S.meId) continue;
+    const dx = o.x - camera.position.x;
+    const dz = o.z - camera.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d > range || d < 0.001) continue;
+    const dot = (dx / d) * fx + (dz / d) * fz;
+    if (dot < 0.35) continue;                        // 앞쪽 약 ±70도만
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  return best;
+}
+
+function swing() {
+  const cd = (S.cfg.combat && S.cfg.combat.cooldown) || 650;
+  if (performance.now() < swingUntil - 200 + cd) return;   // 클라 쿨다운(서버도 재검사)
+  swingUntil = performance.now() + 260;
+  const t = pickTarget();
+  emit('player:swing', { targetId: t ? t.id : null });
+}
+
+/** 지금 빗자루를 들고 있는가 */
+function hasBroom() {
+  const h = myHolding();
+  return !!h && h.type === 'broom';
+}
 
 /* ──────────────── 입력 ──────────────── */
 export function initPlayer(canvas) {
@@ -68,9 +120,11 @@ export function initPlayer(canvas) {
 
   document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-  // 마우스 좌클릭 = E 와 동일 (조준 상태에서)
+  // 좌클릭: 빗자루를 들었으면 휘두르기, 아니면 상호작용
   document.addEventListener('mousedown', (e) => {
-    if (locked && e.button === 0) interact();
+    if (!locked || state.overlayOpen || e.button !== 0) return;
+    if (hasBroom()) swing();
+    else interact();
   });
 }
 
@@ -127,6 +181,15 @@ export function resolveAction(obj) {
         text: '손님에게 서빙!' + (K && K.plate.length ? ' (' + K.plate.length + '층)' : ' (접시 비었음)'),
         key: 'E', danger: true, run: () => emit('game:serve')
       };
+    case 'broom': {
+      // 빗자루는 협상 중에도 집을 수 있다
+      if (K && K.brooms && K.brooms[st.rack]) return { text: '누가 이미 들고 갔습니다', disabled: true };
+      if (h) return { text: '손이 차 있습니다 (Q: 내려놓기)', disabled: true };
+      return {
+        text: '빗자루 집기 — 좌클릭으로 동료를 후려칩니다',
+        key: 'E', run: () => act('broom:take', { rack: st.rack })
+      };
+    }
   }
 
   if (!cooking) return { text: '주문 확정 후 조리할 수 있습니다', disabled: true };
@@ -203,6 +266,24 @@ function interact() {
 }
 
 /* ──────────────── 이동 & 충돌 ──────────────── */
+/* 다른 플레이어를 통과하지 못하게 밀어낸다 (원-원 충돌) */
+function collidePlayers(pos) {
+  const MIN = RADIUS * 2;              // 두 사람 반지름 합
+  for (const other of S.positions) {
+    if (other.id === S.meId) continue;
+    const dx = pos.x - other.x;
+    const dz = pos.z - other.z;
+    const d = Math.hypot(dx, dz);
+    if (d >= MIN) continue;
+    if (d < 0.001) {                   // 완전히 겹쳤으면 아무 방향으로
+      pos.x += MIN;
+      continue;
+    }
+    pos.x = other.x + (dx / d) * MIN;
+    pos.z = other.z + (dz / d) * MIN;
+  }
+}
+
 function collide(pos) {
   for (const s of solids) {
     const cx = Math.max(s.minX, Math.min(pos.x, s.maxX));
@@ -243,28 +324,45 @@ export function updatePlayer(dt) {
   }
 
   const len = Math.hypot(mx, mz);
+  const pos = { x: camera.position.x, z: camera.position.z };
+
   if (len > 0) {
     mx /= len; mz /= len;
     const sp = (keys.ShiftLeft || keys.ShiftRight ? RUN : SPEED) * dt;
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
-    const pos = { x: camera.position.x, z: camera.position.z };
     // yaw 기준: 전방 = (-sin, -cos), 우측 = (cos, -sin). mz=-1 이 전진.
     pos.x += (mx * cos + mz * sin) * sp;
     pos.z += (mz * cos - mx * sin) * sp;
-    collide(pos);
-    camera.position.x = pos.x;
-    camera.position.z = pos.z;
     bob += dt * (keys.ShiftLeft ? 14 : 9);
   } else {
     bob += dt * 2;
   }
 
-  camera.position.y = EYE + Math.sin(bob) * (len > 0 ? 0.035 : 0.008);
+  // 빗자루에 맞아 밀려나는 중
+  if (knock.x || knock.z) {
+    pos.x += knock.x * dt;
+    pos.z += knock.z * dt;
+    const decay = Math.exp(-6.5 * dt);          // 0.15초쯤이면 거의 멈춘다
+    knock.x *= decay;
+    knock.z *= decay;
+    if (Math.hypot(knock.x, knock.z) < 0.05) { knock.x = 0; knock.z = 0; }
+  }
+
+  collidePlayers(pos);
+  collide(pos);
+  camera.position.x = pos.x;
+  camera.position.z = pos.z;
+
+  camera.position.y = EYE + Math.sin(bob) * (len > 0 ? 0.035 : 0.008) + shakeOffset();
   camera.rotation.order = 'YXZ';
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
   // 레이캐스트는 matrixWorld 를 쓰므로 먼저 갱신한다 (안 하면 조준이 한 프레임 밀린다)
   camera.updateMatrixWorld();
+
+  // 휘두르는 모션
+  const swingLeft = swingUntil - performance.now();
+  setSwingProgress(swingLeft > 0 ? 1 - swingLeft / 260 : 0);
 
   // 조준
   const obj = state.overlayOpen ? null : aim();

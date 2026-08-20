@@ -10,7 +10,7 @@ export const solids = [];          // 충돌용 AABB {minX,maxX,minZ,maxZ}
 let renderer;
 const dynamic = {
   grill: [], toaster: [], boards: [], plate: null, plateLayers: [],
-  hand: null, customer: null, bubble: null, remotes: new Map()
+  hand: null, customer: null, bubble: null, remotes: new Map(), brooms: []
 };
 
 /* ──────────────── 재료별 색 ──────────────── */
@@ -173,6 +173,14 @@ export function makeItemMesh(item) {
     for (let i = 0; i < 3; i++) cyl(0.09, 0.025, C.pickle, (i - 1) * 0.14, 0, 0.03 * i, g, 12);
   } else if (t === 'sauce') {
     cyl(0.24, 0.022, SAUCE_COLOR[item.sauceType] || C.ketchup, 0, 0, 0, g, 16);
+  } else if (t === 'broom') {
+    const stick = cyl(0.035, 1.25, 0xb98b46, 0, 0.25, 0, g, 10);
+    const head = box(0.34, 0.30, 0.14, 0xd9b45a, 0, -0.48, 0, g);
+    head.rotation.z = 0.05;
+    for (let i = 0; i < 5; i++) {
+      box(0.045, 0.20, 0.1, 0xc79a3f, -0.12 + i * 0.06, -0.70, 0, g);
+    }
+    stick.userData.noTint = true;
   } else {
     box(0.2, 0.2, 0.2, 0xcccccc, 0, 0, 0, g);
   }
@@ -427,6 +435,74 @@ function buildIsland() {
   scene.add(dynamic.platePanel.sprite);
 }
 
+/* ──────────────── 빗자루 거치대 ──────────────── */
+const BROOM_SPOTS = [
+  { x: -4.6, z: -6.2, ry: 0 },
+  { x: 4.6, z: -6.2, ry: 0 },
+  { x: 0, z: 7.7, ry: Math.PI }
+];
+
+function buildBrooms() {
+  const count = (S.cfg.slots && S.cfg.slots.brooms) || BROOM_SPOTS.length;
+  for (let i = 0; i < count && i < BROOM_SPOTS.length; i++) {
+    const s = BROOM_SPOTS[i];
+
+    // 벽에 기대놓은 받침
+    const stand = cyl(0.16, 0.1, 0x6b6660, s.x, 0.05, s.z, scene, 12);
+    stand.userData.noTint = true;
+
+    const broom = makeItemMesh({ type: 'broom' });
+    broom.position.set(s.x, 0.78, s.z);
+    broom.rotation.set(0.22, s.ry, 0.12);
+    scene.add(broom);
+
+    hitProxy(s.x, 1.0, s.z, 0.9, 1.9, 0.9, { kind: 'broom', rack: i, label: '빗자루' });
+
+    const p = labelSprite('🧹 빗자루', 1.2, 0, scene, '#ffe08a');
+    p.sprite.position.set(s.x, 1.75, s.z);
+
+    dynamic.brooms.push({ mesh: broom, label: p });
+  }
+}
+
+/** 누가 들고 있으면 거치대에서 사라진다 */
+function syncBrooms() {
+  if (!S.kitchen || !S.kitchen.brooms) return;
+  for (let i = 0; i < dynamic.brooms.length; i++) {
+    const taken = !!S.kitchen.brooms[i];
+    const d = dynamic.brooms[i];
+    if (d.mesh.visible === !taken) continue;
+    d.mesh.visible = !taken;
+    d.label.sprite.visible = !taken;
+  }
+}
+
+/* ──────────────── 타격 이펙트 ──────────────── */
+const hitFx = [];
+
+export function spawnHitFx(x, z) {
+  const p = new Panel(256, 128, 1.8);
+  p.text('💥 퍽!', { color: '#ffd34d', bg: 'rgba(0,0,0,0)' });
+  p.sprite.position.set(x, 1.5, z);
+  scene.add(p.sprite);
+  hitFx.push({ sprite: p.sprite, born: performance.now() });
+}
+
+function tickHitFx() {
+  const t = performance.now();
+  for (let i = hitFx.length - 1; i >= 0; i--) {
+    const f = hitFx[i];
+    const age = (t - f.born) / 900;
+    if (age >= 1) {
+      scene.remove(f.sprite);
+      hitFx.splice(i, 1);
+      continue;
+    }
+    f.sprite.position.y = 1.5 + age * 0.7;
+    f.sprite.material.opacity = 1 - age;
+  }
+}
+
 function buildFrontCounter() {
   counterTop(0, -7.2, 11, 0.9, 0xe08a3c);
 
@@ -482,11 +558,37 @@ function updateHand() {
   if (dynamic.hand) { camera.remove(dynamic.hand); dynamic.hand = null; }
   if (!mine) return;
   const g = makeItemMesh(mine);
-  g.position.set(0.42, -0.32, -0.78);
-  g.rotation.set(0.25, 0.4, 0.12);
-  g.scale.setScalar(1.15);
+  if (mine.type === 'broom') {
+    // 무기처럼 어깨에 걸쳐 든다
+    g.position.set(0.5, -0.5, -0.85);
+    g.rotation.set(-0.35, 0.2, -0.55);
+    g.scale.setScalar(0.85);
+  } else {
+    g.position.set(0.42, -0.32, -0.78);
+    g.rotation.set(0.25, 0.4, 0.12);
+    g.scale.setScalar(1.15);
+  }
+  dynamic.handBase = { pos: g.position.clone(), rot: g.rotation.clone() };
   camera.add(g);
   dynamic.hand = g;
+}
+
+/** 빗자루 휘두르는 모션 (0~1 진행도) */
+export function setSwingProgress(t) {
+  const g = dynamic.hand;
+  const base = dynamic.handBase;
+  if (!g || !base) return;
+  if (t <= 0) {
+    g.position.copy(base.pos);
+    g.rotation.copy(base.rot);
+    return;
+  }
+  // 위로 들었다가 아래로 후려친다
+  const arc = Math.sin(t * Math.PI);
+  g.rotation.x = base.rot.x - arc * 2.0;
+  g.rotation.z = base.rot.z + arc * 0.8;
+  g.position.z = base.pos.z - arc * 0.35;
+  g.position.y = base.pos.y + arc * 0.25;
 }
 
 /* ──────────────── 조리 상태 갱신 ──────────────── */
@@ -722,6 +824,7 @@ export function initWorld(canvas) {
   buildSauces();
   buildIsland();
   buildFrontCounter();
+  buildBrooms();
 }
 
 function resize() {
@@ -738,12 +841,14 @@ export function syncFromKitchen() {
   syncSlots(S.kitchen.toaster, dynamic.toaster, 1.17);
   syncBoards();
   syncPlate();
+  syncBrooms();
   updateHand();
 }
 
 export function render() {
   tickCooking();
   syncBoards();
+  tickHitFx();
   updateRemotes();
   renderer.render(scene, camera);
 }

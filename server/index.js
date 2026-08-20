@@ -34,7 +34,8 @@ app.get('/config.json', (req, res) => res.json({
   grillable: G.GRILLABLE,
   toastable: G.TOASTABLE,
   binItems: G.BIN_ITEMS,
-  slots: { grill: G.GRILL_SLOTS, toaster: G.TOASTER_SLOTS, boards: G.CHOP_BOARDS },
+  slots: { grill: G.GRILL_SLOTS, toaster: G.TOASTER_SLOTS, boards: G.CHOP_BOARDS, brooms: G.BROOM_RACKS },
+  combat: { range: G.HIT_RANGE, cooldown: G.HIT_COOLDOWN, knockback: G.KNOCKBACK },
   paces: G.PACES,
   defaultPace: G.DEFAULT_PACE,
   layerOrder: G.LAYER_ORDER
@@ -317,6 +318,28 @@ io.on('connection', (socket) => {
   socket.on('player:move', (pos) => {
     const room = currentRoom();
     if (room) room.setPos(socket.id, pos);
+  });
+
+  /* 빗자루 휘두르기 — 클라이언트가 대상을 지목하면 서버가 재검증 */
+  socket.on('player:swing', ({ targetId }) => {
+    const room = currentRoom();
+    if (!room) return;
+    const res = room.swing(socket.id, targetId);
+    if (!res.ok) {
+      if (!res.silent && res.msg) socket.emit('act:fail', { msg: res.msg });
+      return;
+    }
+    // 헛스윙도 모두에게 알려 휘두르는 모션이 보이게 한다
+    io.to(room.code).emit('swing', { by: res.by });
+    if (res.miss) return;
+
+    io.to(room.code).emit('hit', {
+      by: res.by, byName: res.byName,
+      target: res.target, targetName: res.targetName,
+      dirX: res.dirX, dirZ: res.dirZ, power: res.power,
+      dropped: res.dropped
+    });
+    if (res.dropped) broadcastKitchen(room);   // 재료를 놓쳤으니 손 상태 갱신
   });
 
   socket.on('disconnect', () => {

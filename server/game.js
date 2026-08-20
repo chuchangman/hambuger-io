@@ -31,6 +31,12 @@ const GRILL_SLOTS = 6;
 const TOASTER_SLOTS = 3;
 const CHOP_BOARDS = 2;
 
+/* ── 빗자루 난투 ── */
+const BROOM_RACKS = 3;          // 가게에 놓인 빗자루 개수
+const HIT_RANGE = 2.6;          // 때릴 수 있는 거리(m)
+const HIT_COOLDOWN = 650;       // 휘두르기 쿨다운(ms)
+const KNOCKBACK = 7.2;          // 넉백 세기
+
 /* 재료통에서 꺼낼 수 있는 것들 */
 const GRILLABLE = ['patty', 'bacon', 'egg'];
 const TOASTABLE = ['bun_bottom', 'bun_top'];
@@ -261,9 +267,16 @@ class Room {
       toaster: new Array(TOASTER_SLOTS).fill(null),
       boards: new Array(CHOP_BOARDS).fill(null),
       plate: [],
-      served: false
+      served: false,
+      brooms: new Array(BROOM_RACKS).fill(null)   // 각 칸을 들고 있는 플레이어 id (null = 꽂혀 있음)
     };
-    for (const p of this.players.values()) p.holding = null;
+    for (const p of this.players.values()) { p.holding = null; p.lastSwing = 0; }
+  }
+
+  /* 빗자루를 제자리로 돌려놓는다 */
+  releaseBroom(playerId) {
+    const b = this.kitchen.brooms;
+    for (let i = 0; i < b.length; i++) if (b[i] === playerId) b[i] = null;
   }
 
   /* ── 플레이어 (역할 구분 없음) ── */
@@ -274,6 +287,7 @@ class Room {
       name: name || '직원',
       color: PLAYER_COLORS[n % PLAYER_COLORS.length],
       holding: null,
+      lastSwing: 0,
       pos: { x: -1.6 + (n % 4) * 1.1, z: 6.5 + Math.floor(n / 4) * 1.1, ry: 0 }
     };
     this.players.set(socketId, p);
@@ -283,6 +297,7 @@ class Room {
 
   removePlayer(socketId) {
     const p = this.players.get(socketId);
+    this.releaseBroom(socketId);   // 들고 나가면 빗자루가 영영 사라지므로 제자리로
     // 손에 든 재료는 사라진다
     this.players.delete(socketId);
     if (this.hostId === socketId) {
@@ -330,7 +345,13 @@ class Room {
   kitchenAction(playerId, action, payload) {
     const p = this.players.get(playerId);
     if (!p) return { ok: false, msg: '플레이어를 찾을 수 없습니다.' };
-    if (this.phase !== PHASE.COOKING || this.kitchen.served) {
+
+    // 빗자루는 조리 단계가 아니어도 집고 내려놓을 수 있다 (협상 중 난투용)
+    const inRound = this.phase === PHASE.NEGOTIATION || this.phase === PHASE.COOKING;
+    const anyPhase = action === 'broom:take' || action === 'drop';
+    if (anyPhase) {
+      if (!inRound) return { ok: false, msg: '라운드 중에만 가능합니다.' };
+    } else if (this.phase !== PHASE.COOKING || this.kitchen.served) {
       return { ok: false, msg: '주문이 확정되어야 조리할 수 있습니다.' };
     }
     const k = this.kitchen;
@@ -466,6 +487,7 @@ class Room {
       case 'plate:add': {
         if (!p.holding) return { ok: false, msg: '손에 아무것도 없습니다.' };
         const h = p.holding;
+        if (h.tool) return { ok: false, msg: '빗자루는 버거에 못 넣습니다.' };
         if (h.raw && GRILLABLE.includes(h.type)) return { ok: false, msg: '생재료는 구워야 합니다!' };
         if (h.raw && M.VEGGIES.includes(h.type)) return { ok: false, msg: '채소는 썰어야 합니다!' };
         if (k.plate.length >= 20) return { ok: false, msg: '너무 많이 쌓았습니다.' };
@@ -480,16 +502,69 @@ class Room {
         return { ok: true, msg: p.holding.label + ' 회수' };
       }
 
+      /* 빗자루 집기 */
+      case 'broom:take': {
+        const rack = payload.rack | 0;
+        if (rack < 0 || rack >= BROOM_RACKS) return { ok: false, msg: '없는 빗자루입니다.' };
+        if (p.holding) return { ok: false, msg: '손이 이미 차 있습니다. (Q: 내려놓기)' };
+        if (k.brooms[rack]) return { ok: false, msg: '누가 이미 들고 갔습니다.' };
+        k.brooms[rack] = playerId;
+        p.holding = {
+          uid: uid('br'), type: 'broom', tool: true, rack,
+          label: M.INGREDIENTS.broom.name, emoji: M.INGREDIENTS.broom.emoji
+        };
+        return { ok: true, msg: '빗자루를 들었다! (좌클릭: 휘두르기)' };
+      }
+
       case 'drop': {
         if (!p.holding) return { ok: false, msg: '손에 아무것도 없습니다.' };
         const nm = p.holding.label;
+        if (p.holding.type === 'broom') this.releaseBroom(playerId);   // 제자리로 반납
         p.holding = null;
-        return { ok: true, msg: nm + ' 버림' };
+        return { ok: true, msg: nm + (nm === '빗자루' ? ' 제자리에' : ' 버림') };
       }
 
       default:
         return { ok: false, msg: '알 수 없는 동작입니다.' };
     }
+  }
+
+  /* ────────────────────────────────────────────────────────
+     빗자루 휘두르기.
+     클라이언트가 대상을 지목하면 서버가 거리·쿨다운을 다시 검사한다.
+     맞으면 뒤로 밀려나고, 들고 있던 재료를 놓친다. (빗자루는 안 놓침)
+     ──────────────────────────────────────────────────────── */
+  swing(attackerId, targetId) {
+    if (this.phase !== PHASE.NEGOTIATION && this.phase !== PHASE.COOKING) return { ok: false, silent: true };
+    const a = this.players.get(attackerId);
+    if (!a) return { ok: false };
+    if (!a.holding || a.holding.type !== 'broom') {
+      return { ok: false, msg: '빗자루가 없습니다.' };
+    }
+    const now = Date.now();
+    if (now - (a.lastSwing || 0) < HIT_COOLDOWN) return { ok: false, silent: true };
+    a.lastSwing = now;
+
+    const t = this.players.get(targetId);
+    if (!t || t === a) return { ok: true, miss: true, by: attackerId };
+
+    const dx = t.pos.x - a.pos.x;
+    const dz = t.pos.z - a.pos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > HIT_RANGE) return { ok: true, miss: true, by: attackerId };
+
+    const len = dist || 0.0001;
+    const dropped = (t.holding && !t.holding.tool) ? t.holding.label : null;
+    if (dropped) t.holding = null;          // 맞으면 재료를 놓친다
+
+    return {
+      ok: true,
+      by: attackerId, byName: a.name,
+      target: targetId, targetName: t.name,
+      dirX: dx / len, dirZ: dz / len,
+      power: KNOCKBACK,
+      dropped
+    };
   }
 
   /* ── 결과 ── */
@@ -595,6 +670,7 @@ class Room {
       toaster: this.kitchen.toaster,
       boards: this.kitchen.boards,
       plate: this.kitchen.plate,
+      brooms: this.kitchen.brooms,
       served: this.kitchen.served,
       hands: Array.from(this.players.values()).map((p) => ({ id: p.id, holding: p.holding })),
       now: Date.now()
@@ -617,6 +693,7 @@ module.exports = {
   Room, PHASE, PACES, DEFAULT_PACE, LAYER_ORDER,
   NEGOTIATION_SECONDS, COOKING_SECONDS,
   GRILL_SLOTS, TOASTER_SLOTS, CHOP_BOARDS, BIN_ITEMS, GRILLABLE, TOASTABLE,
+  BROOM_RACKS, HIT_RANGE, HIT_COOLDOWN, KNOCKBACK,
   cookQuality, summarizeBuilt, compareOrders, describeBuilt,
   expectedLayers, stackOrderScore, PLAYER_COLORS
 };

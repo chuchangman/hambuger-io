@@ -77,6 +77,8 @@ export async function connect() {
     fire('tick', d);
   });
 
+  socket.on('swing', (d) => fire('swing', d));
+  socket.on('hit', (d) => fire('hit', d));
   socket.on('result', (r) => { S.result = r; fire('result', r); });
   socket.on('toast', (d) => fire('toast', d));
   socket.on('act:ok', (d) => fire('act', { ...d, ok: true }));
