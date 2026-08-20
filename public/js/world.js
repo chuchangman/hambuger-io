@@ -477,32 +477,6 @@ function syncBrooms() {
   }
 }
 
-/* ──────────────── 타격 이펙트 ──────────────── */
-const hitFx = [];
-
-export function spawnHitFx(x, z) {
-  const p = new Panel(256, 128, 1.8);
-  p.text('💥 퍽!', { color: '#ffd34d', bg: 'rgba(0,0,0,0)' });
-  p.sprite.position.set(x, 1.5, z);
-  scene.add(p.sprite);
-  hitFx.push({ sprite: p.sprite, born: performance.now() });
-}
-
-function tickHitFx() {
-  const t = performance.now();
-  for (let i = hitFx.length - 1; i >= 0; i--) {
-    const f = hitFx[i];
-    const age = (t - f.born) / 900;
-    if (age >= 1) {
-      scene.remove(f.sprite);
-      hitFx.splice(i, 1);
-      continue;
-    }
-    f.sprite.position.y = 1.5 + age * 0.7;
-    f.sprite.material.opacity = 1 - age;
-  }
-}
-
 function buildFrontCounter() {
   counterTop(0, -7.2, 11, 0.9, 0xe08a3c);
 
@@ -850,7 +824,6 @@ export function syncFromKitchen() {
 export function render() {
   tickCooking();
   syncBoards();
-  tickHitFx();
   updateRemotes();
   renderer.render(scene, camera);
 }

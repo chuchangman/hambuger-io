@@ -1,7 +1,7 @@
 /* 엔트리 — 네트워크 · 월드 · 플레이어 · UI 를 연결하고 루프를 돈다 */
 import { connect, on, S } from './net.js';
 import {
-  initWorld, render, syncFromKitchen, updateCustomer, spawnHitFx,
+  initWorld, render, syncFromKitchen, updateCustomer,
   scene, camera, interactables
 } from './world.js';
 import {
@@ -44,20 +44,9 @@ async function boot() {
   on('kitchen', syncFromKitchen);
   on('state', updateCustomer);
 
-  // 빗자루에 맞았다
+  // 빗자루에 맞았다 — 넉백만 적용하고 별도 알림은 띄우지 않는다
   on('hit', (d) => {
-    const me = d.target === S.meId;
-    const pos = me
-      ? { x: camera.position.x, z: camera.position.z }
-      : (S.positions.find((p) => p.id === d.target) || { x: 0, z: 0 });
-    spawnHitFx(pos.x, pos.z);
-
-    if (me) {
-      applyKnockback(d.dirX, d.dirZ, d.power);
-      toast('🧹 ' + d.byName + ' 에게 맞았다!' + (d.dropped ? ' — ' + d.dropped + ' 놓침' : ''), 'bad');
-    } else if (d.by === S.meId) {
-      toast('🧹 ' + d.targetName + ' 명중!' + (d.dropped ? ' — ' + d.dropped + ' 떨어뜨림' : ''), 'good');
-    }
+    if (d.target === S.meId) applyKnockback(d.dirX, d.dirZ, d.power);
   });
   on('phase', (phase) => {
     if (phase === 'negotiation') {
