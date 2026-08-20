@@ -145,9 +145,24 @@ npm start
 | **C** | 손님과 대화창 열기 (어디서나) |
 | **B** | 주문패드 열기 (어디서나) |
 | **Esc** | 창 닫기 / 마우스 잠금 해제 |
+| **좌클릭** (빗자루 든 상태) | 🧹 **휘두르기** |
 
 화면 가운데 조준점을 물건에 맞추면 무엇을 할 수 있는지 문구가 뜹니다.
 **손에는 한 번에 하나만** 들 수 있습니다.
+
+### 🧹 빗자루 난투
+
+플레이어끼리 **서로 통과할 수 없습니다.** 좁은 주방에서 길을 막는 것부터가 훼방입니다.
+
+가게에 빗자루가 **3개** 놓여 있습니다. **E** 로 집고 **Q** 로 제자리에 돌려놓습니다.
+
+- **좌클릭으로 휘두릅니다.** 사거리 2.6m, 정면 ±70도, 쿨다운 0.65초
+- 맞은 사람은 **뒤로 밀려나고, 들고 있던 재료를 놓칩니다**
+- 단, **빗자루를 들면 재료를 못 듭니다.** 훼방에는 대가가 따릅니다
+- 협상 중에도 쓸 수 있습니다
+
+거리와 쿨다운은 서버가 다시 검사하므로 클라이언트를 고쳐도 뚫리지 않습니다.
+빗자루를 든 채로 나가거나 라운드가 끝나면 자동으로 제자리에 돌아옵니다.
 
 ---
 
@@ -268,6 +283,7 @@ public/js/
   ui.js      HUD · 위치 표시 · 대화/주문패드 오버레이 · 대기실 · 결과
 test/
   smoke.js   3인 플레이 전체 흐름 자동 검증 (`npm test`)
+  broom.js   빗자루 난투 검증 (`npm run test:broom`)
 ```
 
 Gemini는 SDK 없이 REST(`generativelanguage.googleapis.com`)를 Node 내장 `fetch`로 호출합니다.
@@ -298,6 +314,8 @@ npm test
 | 표준 조립 순서 | `server/game.js` 의 `LAYER_ORDER` |
 | 굽기 난이도 조절 | `server/menu.js` 의 `INGREDIENTS` — `target`, `burnt`, `tol`(관대할수록 크게) |
 | 바닥 구역 범위 | `public/js/world.js` 의 `ZONES` |
+| 빗자루 위력·사거리·쿨다운 | `server/game.js` 의 `HIT_RANGE`, `HIT_COOLDOWN`, `KNOCKBACK` |
+| 빗자루 개수·위치 | `server/game.js` 의 `BROOM_RACKS` / `world.js` 의 `BROOM_SPOTS` |
 | 이동 속도 / 시야각 | `public/js/player.js` 의 `SPEED`, `RUN` / `world.js` 의 카메라 `fov` |
 | 새 고객 유형 | `server/menu.js` 의 `PERSONAS` 배열에 항목 추가 |
 | 점수 비중 | `server/game.js` 의 `applySatisfaction` |
