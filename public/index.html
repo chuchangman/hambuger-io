@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>진상 고객 햄버거 가게</title>
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍔</text></svg>" />
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<!-- ══════════════ HUD ══════════════ -->
+<div id="hud" class="hidden">
+  <div class="hud-top">
+    <div class="phase-chip" id="phase-chip">주문 받는 중</div>
+    <div class="timer" id="timer">3:00</div>
+    <div class="patience">
+      <span>손님 인내심</span>
+      <div class="bar"><i id="patience-bar"></i></div>
+    </div>
+  </div>
+
+  <div id="ticket" class="ticket"></div>
+  <div id="say" class="say"></div>
+
+  <div id="location" class="location">
+    <b id="location-name">🚶 매장 통로</b>
+    <span id="location-help">카운터 또는 주방으로 이동하세요</span>
+  </div>
+
+  <div id="crosshair"></div>
+  <div id="prompt" class="hidden"></div>
+
+  <div class="hud-bottom">
+    <div id="hand" class="hand"><span class="nm empty">빈손</span></div>
+    <div id="amount-pill" class="pill">R · 보통</div>
+  </div>
+
+  <div class="controls">
+    <b>WASD</b> 이동 · <b>Shift</b> 달리기 · <b>마우스</b> 시점<br />
+    <b>E</b> 상호작용 · <b>Q</b> 버리기 · <b>R</b> 양 변경<br />
+    <b>C</b> 대화 · <b>B</b> 주문패드 · <b>Esc</b> 마우스 해제
+  </div>
+</div>
+
+<!-- ══════════════ 입장 ══════════════ -->
+<section id="screen-join" class="screen active solid">
+  <div class="card">
+    <h1 class="logo">🍔 진상 고객<br /><span>햄버거 가게</span></h1>
+    <p class="tagline">이상한 손님의 말을 정확한 주문서로 바꾸고,<br />다 같이 주방을 뛰어다니며 버거를 만드세요.</p>
+
+    <label class="field"><span>이름</span>
+      <input id="input-name" maxlength="12" placeholder="예: 김알바" autocomplete="off" /></label>
+
+    <button id="btn-create" class="btn primary big">새 가게 열기</button>
+    <div class="or"><span>또는</span></div>
+    <div class="join-row">
+      <input id="input-code" maxlength="4" placeholder="방 코드" autocomplete="off" />
+      <button id="btn-join" class="btn">입장</button>
+    </div>
+    <p id="join-err" class="err"></p>
+    <p class="llm-note" id="llm-note"></p>
+  </div>
+</section>
+
+<!-- ══════════════ 대기실 ══════════════ -->
+<section id="screen-lobby" class="screen solid">
+  <div class="card wide">
+    <div class="room-code">
+      <span class="label">방 코드</span>
+      <strong id="lobby-code">----</strong>
+      <button id="btn-copy" class="btn tiny">초대 링크 복사</button>
+    </div>
+
+    <p class="hint">모두 같은 역할입니다. 대화도, 요리도 누구나 할 수 있어요. <b>3~5명 권장</b></p>
+
+    <h3>참가자</h3>
+    <ul id="player-list" class="player-list"></ul>
+
+    <div class="howto">
+      <h3>이렇게 플레이합니다</h3>
+      <ol>
+        <li><b>손님에게 말을 걸어</b> 원하는 걸 알아냅니다. (카운터 앞에서 <b>E</b>, 또는 <b>C</b>)</li>
+        <li>알아낸 내용을 <b>주문패드</b>에 적습니다. (<b>B</b>)</li>
+        <li><b>주문 확정</b>을 누르면 주방 시간이 시작됩니다.</li>
+        <li>재료를 집어 굽고 썰어 <b>조립대</b>에 쌓고, <b>서빙 창구</b>로 내보냅니다.</li>
+      </ol>
+      <p class="hint">주의: 손님의 진짜 주문은 아무도 볼 수 없습니다. 잘못 적으면 그대로 만들게 됩니다.</p>
+    </div>
+
+    <div class="host-only" id="host-controls">
+      <h3>난이도</h3>
+      <div class="seg" id="difficulty-seg">
+        <button data-diff="1">순한맛</button>
+        <button data-diff="2" class="on">보통</button>
+        <button data-diff="3">매운맛</button>
+        <button data-diff="4">지옥</button>
+      </div>
+      <h3>진행 속도</h3>
+      <div class="seg" id="pace-seg"></div>
+      <p class="hint" id="pace-desc"></p>
+      <button id="btn-start" class="btn primary big">라운드 시작</button>
+    </div>
+    <p class="hint" id="not-host-hint">방장이 시작하기를 기다리는 중...</p>
+
+    <div id="lobby-history"></div>
+  </div>
+</section>
+
+<!-- ══════════════ 게임(3D 캔버스가 보임) ══════════════ -->
+<section id="screen-game" class="screen"></section>
+
+<!-- ══════════════ 오버레이 ══════════════ -->
+<div id="overlay-bg" class="hidden"></div>
+
+<div id="overlay-chat" class="overlay hidden">
+  <div class="overlay-head">
+    <h2>💬 손님과 대화</h2>
+    <span id="chat-persona" class="sub"></span>
+    <button class="overlay-close btn tiny">닫기 (Esc)</button>
+  </div>
+  <div id="chat-log" class="chat-log"></div>
+  <div class="chat-input">
+    <input id="chat-text" placeholder="손님에게 말을 거세요..." maxlength="300" autocomplete="off" />
+    <button id="btn-send" class="btn primary">보내기</button>
+  </div>
+  <div class="quick-asks" id="quick-asks"></div>
+</div>
+
+<div id="overlay-pad" class="overlay hidden">
+  <div class="overlay-head">
+    <h2>📝 주문패드</h2>
+    <span class="sub">누구나 수정할 수 있습니다</span>
+    <button id="btn-draft" class="btn tiny">AI 받아쓰기</button>
+    <button class="overlay-close btn tiny">닫기 (Esc)</button>
+  </div>
+  <div id="pad-body" class="pad-body"></div>
+  <p id="pad-locked" class="hint hidden">주문이 이미 확정되었습니다. 이제 만들면 됩니다!</p>
+  <button id="btn-submit" class="btn primary big">주문 확정 — 조리 시작</button>
+</div>
+
+<!-- ══════════════ 결과 ══════════════ -->
+<section id="screen-result" class="screen solid scrollable">
+  <div class="card result-card">
+    <h1 id="r-title">라운드 결과</h1>
+    <div class="score-hero">
+      <div class="big-score"><span id="r-total">--</span><em>점</em></div>
+      <div class="customer-quote" id="r-quote"></div>
+    </div>
+    <div class="score-bars" id="r-bars"></div>
+
+    <h2>주문이 어디서 어긋났나</h2>
+    <div class="compare" id="r-compare"></div>
+
+    <div class="diff-cols">
+      <div><h3>📝 주문 받을 때 놓친 것</h3><ul id="r-diff-neg"></ul></div>
+      <div><h3>👨‍🍳 만들 때 놓친 것</h3><ul id="r-diff-kit"></ul></div>
+      <div><h3>😤 손님이 느낀 차이</h3><ul id="r-diff-fin"></ul></div>
+    </div>
+
+    <h2>조립 순서</h2>
+    <div id="r-stack" class="stack-compare"></div>
+
+    <h2>완성된 버거</h2>
+    <ol id="r-built" class="built-list"></ol>
+
+    <h2>대화 기록</h2>
+    <div id="r-transcript" class="transcript"></div>
+
+    <button id="btn-next" class="btn primary big">다음 라운드 준비</button>
+    <p class="hint" id="r-hint">방장이 다음 라운드를 준비합니다.</p>
+  </div>
+</section>
+
+<div id="toast-area"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
